@@ -9,15 +9,28 @@ const fs = require('fs');
 const path = require('path');
 
 const JSON_PATH = path.join(__dirname, 'db.json');
-const USING_PG = !!process.env.DATABASE_URL;
+const USING_PG = !!process.env.DATABASE_URL || !!process.env.PGHOST;
 
 let pool;
 if (USING_PG) {
   const { Pool } = require('pg');
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
+  if (process.env.DATABASE_URL) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+  } else {
+    // Variables separadas — más fácil de configurar sin errores de copiado
+    // que armar una sola URL larga a mano.
+    pool = new Pool({
+      host: process.env.PGHOST,
+      port: Number(process.env.PGPORT) || 5432,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      database: process.env.PGDATABASE || 'postgres',
+      ssl: { rejectUnauthorized: false },
+    });
+  }
 }
 
 // ---------- Inicialización ----------
