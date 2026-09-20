@@ -1,0 +1,13 @@
+{
+  "name": "findit",
+  "version": "1.0.0",
+  "description": "FindIt - MVP de objetos perdidos y encontrados para estudiantes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.0"
+  }
+}
