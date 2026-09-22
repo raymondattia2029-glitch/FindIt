@@ -59,10 +59,14 @@ async function init() {
       );
       CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
-        item_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        text TEXT NOT NULL,
-        created_at BIGINT
+        user_a TEXT NOT NULL,
+        user_b TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        text TEXT,
+        photo TEXT,
+        item_id TEXT,
+        created_at BIGINT,
+        read BOOLEAN DEFAULT FALSE
       );
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
@@ -74,6 +78,18 @@ async function init() {
         created_at BIGINT
       );
     `);
+    // Migración suave: si la tabla 'messages' ya existía con el esquema
+    // viejo (de una versión anterior de la app), le agregamos las columnas
+    // que falten sin borrar nada.
+    await pool.query(`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_a TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_b TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_id TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS photo TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT FALSE;
+      ALTER TABLE messages ALTER COLUMN item_id DROP NOT NULL;
+      ALTER TABLE messages ALTER COLUMN text DROP NOT NULL;
+    `).catch(() => {}); // si alguna columna ya tiene otra forma, no interrumpe el arranque
     console.log('Conectado a Postgres (Supabase) — tablas listas.');
   } else {
     if (!fs.existsSync(JSON_PATH)) {
@@ -220,31 +236,71 @@ function rowToItem(r) {
   };
 }
 
-// ==================== MENSAJES ====================
+// ==================== MENSAJES (conversaciones entre dos personas) ====================
+
+function sortedPair(u1, u2) {
+  return [u1, u2].sort();
+}
 
 async function addMessage(msg) {
+  const [userA, userB] = sortedPair(msg.senderId, msg.otherUserId);
   if (USING_PG) {
     await pool.query(
-      `INSERT INTO messages (id, item_id, user_id, text, created_at) VALUES ($1,$2,$3,$4,$5)`,
-      [msg.id, msg.itemId, msg.userId, msg.text, msg.createdAt]
+      `INSERT INTO messages (id, user_a, user_b, sender_id, text, photo, item_id, created_at, read)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [msg.id, userA, userB, msg.senderId, msg.text || null, msg.photo || null, msg.itemId || null, msg.createdAt, false]
     );
   } else {
     const db = readJson();
     if (!db.messages) db.messages = [];
-    db.messages.push(msg);
+    db.messages.push({ id: msg.id, userA, userB, senderId: msg.senderId, text: msg.text || null, photo: msg.photo || null, itemId: msg.itemId || null, createdAt: msg.createdAt, read: false });
     writeJson(db);
   }
 }
 
-async function listMessages(itemId) {
+async function getMessagesInvolvingUser(userId) {
   if (USING_PG) {
-    const r = await pool.query(`SELECT * FROM messages WHERE item_id = $1 ORDER BY created_at ASC`, [itemId]);
-    return r.rows.map((row) => ({
-      id: row.id, itemId: row.item_id, userId: row.user_id, text: row.text, createdAt: Number(row.created_at),
-    }));
+    const r = await pool.query(
+      `SELECT * FROM messages WHERE (user_a=$1 OR user_b=$1) AND user_a IS NOT NULL ORDER BY created_at ASC`,
+      [userId]
+    );
+    return r.rows.map(rowToMessage);
   }
   const db = readJson();
-  return (db.messages || []).filter((m) => m.itemId === itemId);
+  return (db.messages || [])
+    .filter((m) => m.userA === userId || m.userB === userId)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+async function listThreadMessages(userIdA, userIdB) {
+  const [a, b] = sortedPair(userIdA, userIdB);
+  if (USING_PG) {
+    const r = await pool.query(`SELECT * FROM messages WHERE user_a=$1 AND user_b=$2 ORDER BY created_at ASC`, [a, b]);
+    return r.rows.map(rowToMessage);
+  }
+  const db = readJson();
+  return (db.messages || []).filter((m) => m.userA === a && m.userB === b).sort((x, y) => x.createdAt - y.createdAt);
+}
+
+async function markThreadRead(userIdA, userIdB, readerId) {
+  const [a, b] = sortedPair(userIdA, userIdB);
+  if (USING_PG) {
+    await pool.query(`UPDATE messages SET read = TRUE WHERE user_a=$1 AND user_b=$2 AND sender_id != $3`, [a, b, readerId]);
+  } else {
+    const db = readJson();
+    (db.messages || []).forEach((m) => {
+      if (m.userA === a && m.userB === b && m.senderId !== readerId) m.read = true;
+    });
+    writeJson(db);
+  }
+}
+
+function rowToMessage(r) {
+  return {
+    id: r.id, userA: r.user_a, userB: r.user_b, senderId: r.sender_id,
+    text: r.text, photo: r.photo, itemId: r.item_id,
+    createdAt: Number(r.created_at), read: !!r.read,
+  };
 }
 
 // ==================== NOTIFICACIONES ====================
@@ -301,6 +357,6 @@ module.exports = {
   init, USING_PG,
   createUser, getUserByUsername, getUserByToken, getUserById, updateUserToken,
   createItem, getAllItems, getItemById, listItems, resolveItem,
-  addMessage, listMessages,
+  addMessage, getMessagesInvolvingUser, listThreadMessages, markThreadRead,
   notificationExists, addNotification, listNotifications, markNotificationRead,
 };

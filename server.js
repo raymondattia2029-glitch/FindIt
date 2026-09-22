@@ -262,23 +262,69 @@ app.get('/api/items/:id', async (req, res) => {
   });
 });
 
-// ---------- Chat por objeto ----------
-app.get('/api/items/:id/messages', async (req, res) => {
-  const msgs = await db.listMessages(req.params.id);
-  const withNames = await Promise.all(msgs.map(async (m) => {
-    const u = await db.getUserById(m.userId);
-    return { ...m, senderName: u ? u.name : 'Estudiante' };
+// ---------- Conversaciones (chat entre dos personas) ----------
+
+// Lista de conversaciones del usuario actual, con último mensaje y no leídos
+app.get('/api/conversations', requireAuth, async (req, res) => {
+  const msgs = await db.getMessagesInvolvingUser(req.user.id);
+  const byOther = new Map();
+
+  for (const m of msgs) {
+    const otherId = m.userA === req.user.id ? m.userB : m.userA;
+    if (!otherId) continue;
+    const entry = byOther.get(otherId) || { otherUserId: otherId, lastMessage: null, lastMessageAt: 0, unreadCount: 0, itemId: null };
+    if (m.createdAt >= entry.lastMessageAt) {
+      entry.lastMessage = m.text || (m.photo ? '📷 Foto' : '');
+      entry.lastMessageAt = m.createdAt;
+      entry.itemId = m.itemId || entry.itemId;
+    }
+    if (m.senderId !== req.user.id && !m.read) entry.unreadCount++;
+    byOther.set(otherId, entry);
+  }
+
+  const list = await Promise.all([...byOther.values()].map(async (c) => {
+    const u = await db.getUserById(c.otherUserId);
+    let itemNombre = null;
+    if (c.itemId) {
+      const it = await db.getItemById(c.itemId);
+      itemNombre = it ? it.nombre : null;
+    }
+    return { ...c, otherUserName: u ? u.name : 'Estudiante', itemNombre };
   }));
-  res.json(withNames);
+
+  list.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+  res.json(list);
 });
 
-app.post('/api/items/:id/messages', requireAuth, async (req, res) => {
-  const { text } = req.body;
-  if (!text || !text.trim()) return res.status(400).json({ error: 'Mensaje vacío' });
-  const item = await db.getItemById(req.params.id);
-  if (!item) return res.status(404).json({ error: 'Objeto no encontrado' });
+// Mensajes de una conversación específica (y los marca como leídos)
+app.get('/api/conversations/:otherUserId/messages', requireAuth, async (req, res) => {
+  const msgs = await db.listThreadMessages(req.user.id, req.params.otherUserId);
+  await db.markThreadRead(req.user.id, req.params.otherUserId, req.user.id);
+  const withSenderInfo = await Promise.all(msgs.map(async (m) => {
+    const u = await db.getUserById(m.senderId);
+    return { ...m, senderName: u ? u.name : 'Estudiante' };
+  }));
+  res.json(withSenderInfo);
+});
 
-  const msg = { id: newId('msg'), itemId: req.params.id, userId: req.user.id, text: text.trim(), createdAt: Date.now() };
+app.post('/api/conversations/:otherUserId/messages', requireAuth, upload.single('foto'), async (req, res) => {
+  const { text, itemId } = req.body;
+  if ((!text || !text.trim()) && !req.file) {
+    return res.status(400).json({ error: 'Escribe un mensaje o adjunta una foto' });
+  }
+  const otherUser = await db.getUserById(req.params.otherUserId);
+  if (!otherUser) return res.status(404).json({ error: 'Persona no encontrada' });
+
+  const photo = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` : null;
+  const msg = {
+    id: newId('msg'),
+    senderId: req.user.id,
+    otherUserId: req.params.otherUserId,
+    text: text ? text.trim() : null,
+    photo,
+    itemId: itemId || null,
+    createdAt: Date.now(),
+  };
   await db.addMessage(msg);
   res.json({ ...msg, senderName: req.user.name });
 });
