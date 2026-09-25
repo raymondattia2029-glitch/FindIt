@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>FindIt — Encuentra lo que perdiste</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="back-btn" id="backBtn" onclick="goBack()" aria-label="Volver">←</button>
+  <div class="brand">🔎 FindIt</div>
+  <div class="topbar-right">
+    <button class="bell-btn hidden" id="bellBtn" onclick="showScreen('notifications')">
+      🔔<span class="bell-badge hidden" id="bellBadge">0</span>
+    </button>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- PANTALLA: LOGIN -->
+  <section class="screen" id="screen-login">
+    <div class="hero">
+      <div class="hero-emoji">🔎</div>
+      <h1>FindIt</h1>
+      <p class="tagline">¿Perdiste algo? Encuéntralo.</p>
+    </div>
+    <form id="formLogin" class="form auth-form">
+      <label>Usuario</label>
+      <input type="text" name="username" placeholder="Ej. juanp" required autocomplete="username">
+      <label>Contraseña</label>
+      <input type="password" name="password" placeholder="Tu contraseña" required autocomplete="current-password">
+      <button type="submit" class="submit-btn submit-btn-brand">Iniciar sesión</button>
+      <p class="auth-error hidden" id="loginError"></p>
+    </form>
+    <button class="ghost-btn" onclick="showScreen('register')">Crear una cuenta</button>
+  </section>
+
+  <!-- PANTALLA: REGISTRO -->
+  <section class="screen hidden" id="screen-register">
+    <h2 class="screen-title">Crear cuenta</h2>
+    <form id="formRegister" class="form auth-form">
+      <label>Tu nombre</label>
+      <input type="text" name="name" placeholder="Ej. Juan Pérez" required>
+      <label>Usuario</label>
+      <input type="text" name="username" placeholder="Ej. juanp" required autocomplete="username">
+      <label>Contraseña</label>
+      <input type="password" name="password" placeholder="Mínimo 4 caracteres" required autocomplete="new-password">
+      <button type="submit" class="submit-btn submit-btn-brand">Crear cuenta</button>
+      <p class="auth-error hidden" id="registerError"></p>
+    </form>
+    <button class="ghost-btn" onclick="showScreen('login')">Ya tengo cuenta</button>
+  </section>
+
+  <!-- PANTALLA: INICIO -->
+  <section class="screen hidden" id="screen-home">
+    <div class="hero">
+      <div class="hero-emoji">🔎</div>
+      <h1>FindIt</h1>
+      <p class="tagline">¿Perdiste algo? Encuéntralo.</p>
+      <p class="who-am-i" id="whoAmI"></p>
+    </div>
+
+    <div class="big-actions">
+      <button class="big-btn big-btn-red" onclick="showScreen('form-lost')">
+        <span class="big-btn-emoji">🔴</span>
+        <span>Perdí algo</span>
+      </button>
+      <button class="big-btn big-btn-green" onclick="showScreen('form-found')">
+        <span class="big-btn-emoji">🟢</span>
+        <span>Encontré algo</span>
+      </button>
+    </div>
+
+    <button class="search-entry" onclick="showScreen('search')">
+      🔍 Buscar objetos
+    </button>
+
+    <button class="search-entry" onclick="showScreen('messages')" style="margin-top:10px;">
+      💬 Mensajes
+    </button>
+
+    <button class="logout-link" onclick="logout()">Cerrar sesión</button>
+  </section>
+
+  <!-- PANTALLA: PERDÍ ALGO -->
+  <section class="screen hidden" id="screen-form-lost">
+    <h2 class="screen-title">🔴 Reportar objeto perdido</h2>
+    <form id="formLost" class="form">
+      <label>Nombre del objeto</label>
+      <input type="text" name="nombre" placeholder="Ej. Botella azul" required>
+
+      <label>Descripción <span class="opt">(opcional)</span></label>
+      <textarea name="descripcion" placeholder="Ej. Tiene stickers, marca X..." rows="2"></textarea>
+
+      <label>Lugar aproximado <span class="opt">(opcional)</span></label>
+      <input type="text" name="lugar" placeholder="Ej. Cafetería, cancha, salón 4B">
+
+      <label>Foto <span class="opt">(opcional)</span></label>
+      <input type="file" name="foto" accept="image/*" capture="environment">
+
+      <button type="submit" class="submit-btn submit-btn-red">Publicar objeto perdido</button>
+    </form>
+  </section>
+
+  <!-- PANTALLA: ENCONTRÉ ALGO -->
+  <section class="screen hidden" id="screen-form-found">
+    <h2 class="screen-title">🟢 Reportar objeto encontrado</h2>
+    <form id="formFound" class="form">
+      <label>Nombre o tipo de objeto</label>
+      <input type="text" name="nombre" placeholder="Ej. AirPods" required>
+
+      <label>Descripción <span class="opt">(opcional)</span></label>
+      <textarea name="descripcion" placeholder="Ej. Estuche blanco, un poco rayado..." rows="2"></textarea>
+
+      <label>Foto <span class="opt">(opcional)</span></label>
+      <input type="file" name="foto" accept="image/*" capture="environment">
+
+      <label>Lugar donde lo encontraste</label>
+      <input type="text" name="lugar" placeholder="Ej. Biblioteca" required>
+
+      <button type="submit" class="submit-btn submit-btn-green">Publicar objeto encontrado</button>
+    </form>
+  </section>
+
+  <!-- PANTALLA: CONFIRMACIÓN + POSIBLES COINCIDENCIAS -->
+  <section class="screen hidden" id="screen-confirm">
+    <div class="confirm-box">
+      <div class="confirm-emoji">✅</div>
+      <h2>¡Publicado!</h2>
+      <p id="confirmText" class="confirm-text"></p>
+    </div>
+    <div id="confirmMatches"></div>
+    <button class="ghost-btn" onclick="goHome()">Volver al inicio</button>
+  </section>
+
+  <!-- PANTALLA: BUSCAR -->
+  <section class="screen hidden" id="screen-search">
+    <h2 class="screen-title">🔍 Buscar objetos</h2>
+    <input type="text" id="searchInput" class="search-box" placeholder="Ej. botella azul, AirPods, calculadora...">
+
+    <div class="tabs">
+      <button class="tab active" data-tab="found" onclick="setSearchTab('found', this)">🟢 Encontrados</button>
+      <button class="tab" data-tab="lost" onclick="setSearchTab('lost', this)">🔴 Perdidos</button>
+    </div>
+
+    <div id="searchResults" class="item-list"></div>
+  </section>
+
+  <!-- PANTALLA: DETALLE + CHAT -->
+  <section class="screen hidden" id="screen-detail">
+    <div id="detailContent"></div>
+  </section>
+
+  <!-- PANTALLA: BANDEJA DE MENSAJES -->
+  <section class="screen hidden" id="screen-messages">
+    <h2 class="screen-title">💬 Mensajes</h2>
+    <div id="conversationsList" class="item-list"></div>
+  </section>
+
+  <!-- PANTALLA: CONVERSACIÓN -->
+  <section class="screen hidden" id="screen-conversation">
+    <div id="conversationHeader" class="conversation-header"></div>
+    <div class="chat-messages" id="conversationMessages"></div>
+    <div class="chat-input-row">
+      <button class="attach-btn" onclick="document.getElementById('conversationPhotoInput').click()">📷</button>
+      <input type="file" id="conversationPhotoInput" accept="image/*" style="display:none;" onchange="onConversationPhotoChosen()">
+      <input type="text" id="conversationInput" placeholder="Escribe un mensaje...">
+      <button onclick="sendConversationMessage()">Enviar</button>
+    </div>
+    <div id="conversationPhotoPreview" class="photo-preview hidden"></div>
+  </section>
+
+  <!-- PANTALLA: NOTIFICACIONES -->
+  <section class="screen hidden" id="screen-notifications">
+    <h2 class="screen-title">🔔 Notificaciones</h2>
+    <div id="notificationsList" class="item-list"></div>
+  </section>
+
+</main>
+
+<script src="app.js?v=4"></script>
+</body>
+</html>
