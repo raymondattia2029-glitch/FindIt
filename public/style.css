@@ -209,18 +209,37 @@ main{max-width:480px; margin:0 auto; padding:18px 18px 60px;}
   margin-top:18px;
 }
 .resolve-btn:active{transform:scale(0.98);}
+.expiry-note{font-size:11.5px; color:var(--ink-soft); text-align:center; margin-top:8px;}
 
 /* Chat */
 .chat-box{margin-top:18px; border-top:1px solid var(--line); padding-top:16px;}
-.chat-messages{display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; margin-bottom:12px;}
+.chat-messages{display:flex; flex-direction:column; gap:8px; overflow-y:auto; margin-bottom:12px;}
 .chat-bubble{
   max-width:78%; padding:10px 13px; border-radius:14px; font-size:13.5px; line-height:1.4;
 }
 .chat-bubble.mine{align-self:flex-end; background:var(--brand); color:#fff; border-bottom-right-radius:4px;}
 .chat-bubble.theirs{align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px;}
 .chat-sender{font-size:10.5px; font-weight:700; color:var(--brand); margin-bottom:2px;}
+.chat-photo{max-width:100%; border-radius:10px; display:block; margin-bottom:4px;}
 
 .notif-card.unread{border-color:var(--brand); background:var(--brand-bg);}
+
+/* Pantalla de conversación dedicada */
+#screen-conversation{display:flex; flex-direction:column; height:calc(100vh - 140px); min-height:420px;}
+#screen-conversation.hidden{display:none;}
+.conversation-header{margin-bottom:6px; flex-shrink:0;}
+#screen-conversation .chat-messages{flex:1; max-height:none;}
+#screen-conversation .chat-input-row{flex-shrink:0;}
+.attach-btn{
+  border:none; background:var(--card); border:1.5px solid var(--line); border-radius:12px;
+  font-size:16px; padding:0 12px; cursor:pointer;
+}
+.photo-preview{
+  margin-top:8px; padding:8px 12px; background:var(--brand-bg); border-radius:10px;
+  font-size:12.5px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+.photo-preview.hidden{display:none;}
+.photo-preview button{background:none; border:none; cursor:pointer; font-size:14px; color:var(--ink-soft);}
 .chat-input-row{display:flex; gap:8px;}
 .chat-input-row input{
   flex:1; padding:12px 14px; border-radius:12px; border:1.5px solid var(--line); font-size:14px;

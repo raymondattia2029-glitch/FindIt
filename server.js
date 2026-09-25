@@ -144,7 +144,7 @@ function matchScore(itemA, itemB) {
 function findMatchesFor(item, allItems) {
   const oppositeType = item.type === 'lost' ? 'found' : 'lost';
   return allItems
-    .filter((other) => other.type === oppositeType && !other.resolved && other.id !== item.id)
+    .filter((other) => other.type === oppositeType && !other.resolved && !db.isExpired(other) && other.id !== item.id)
     .map((other) => ({ item: other, score: matchScore(item, other) }))
     .filter((m) => m.score >= 0.3)
     .sort((a, b) => b.score - a.score);

@@ -78,18 +78,26 @@ async function init() {
         created_at BIGINT
       );
     `);
+
     // Migración suave: si la tabla 'messages' ya existía con el esquema
     // viejo (de una versión anterior de la app), le agregamos las columnas
-    // que falten sin borrar nada.
-    await pool.query(`
-      ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_a TEXT;
-      ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_b TEXT;
-      ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_id TEXT;
-      ALTER TABLE messages ADD COLUMN IF NOT EXISTS photo TEXT;
-      ALTER TABLE messages ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT FALSE;
-      ALTER TABLE messages ALTER COLUMN item_id DROP NOT NULL;
-      ALTER TABLE messages ALTER COLUMN text DROP NOT NULL;
-    `).catch(() => {}); // si alguna columna ya tiene otra forma, no interrumpe el arranque
+    // que falten y aflojamos restricciones viejas, sin borrar nada.
+    // Cada sentencia se ejecuta por separado para que, si una falla (por
+    // ejemplo en una base de datos nueva donde una columna vieja nunca
+    // existió), no eche para atrás las demás.
+    const migrations = [
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_a TEXT`,
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_b TEXT`,
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_id TEXT`,
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS photo TEXT`,
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS read BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE messages ALTER COLUMN item_id DROP NOT NULL`,
+      `ALTER TABLE messages ALTER COLUMN text DROP NOT NULL`,
+      `ALTER TABLE messages ALTER COLUMN user_id DROP NOT NULL`,
+    ];
+    for (const sql of migrations) {
+      await pool.query(sql).catch(() => {});
+    }
     console.log('Conectado a Postgres (Supabase) — tablas listas.');
   } else {
     if (!fs.existsSync(JSON_PATH)) {
@@ -210,10 +218,12 @@ async function listItems({ type, excludeResolved }) {
     if (type) { params.push(type); query += ` AND type = $${params.length}`; }
     query += ` ORDER BY created_at DESC`;
     const r = await pool.query(query, params);
-    return r.rows.map(rowToItem);
+    let items = r.rows.map(rowToItem);
+    if (excludeResolved) items = items.filter((i) => !isExpired(i));
+    return items;
   }
   let items = readJson().items;
-  if (excludeResolved) items = items.filter((i) => !i.resolved);
+  if (excludeResolved) items = items.filter((i) => !i.resolved && !isExpired(i));
   if (type) items = items.filter((i) => i.type === type);
   return items.sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -226,6 +236,14 @@ async function resolveItem(id) {
     const item = db.items.find((i) => i.id === id);
     if (item) { item.resolved = true; writeJson(db); }
   }
+}
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Un objeto se considera "expirado" (y se oculta del buscador) si lleva
+// más de 30 días publicado sin marcarse como resuelto.
+function isExpired(item) {
+  return !item.resolved && Date.now() - item.createdAt > THIRTY_DAYS_MS;
 }
 
 function rowToItem(r) {
@@ -354,7 +372,7 @@ async function markNotificationRead(id, userId) {
 }
 
 module.exports = {
-  init, USING_PG,
+  init, USING_PG, isExpired,
   createUser, getUserByUsername, getUserByToken, getUserById, updateUserToken,
   createItem, getAllItems, getItemById, listItems, resolveItem,
   addMessage, getMessagesInvolvingUser, listThreadMessages, markThreadRead,

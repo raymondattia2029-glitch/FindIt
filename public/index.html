@@ -78,6 +78,10 @@
       🔍 Buscar objetos
     </button>
 
+    <button class="search-entry" onclick="showScreen('messages')" style="margin-top:10px;">
+      💬 Mensajes
+    </button>
+
     <button class="logout-link" onclick="logout()">Cerrar sesión</button>
   </section>
 
@@ -150,6 +154,25 @@
     <div id="detailContent"></div>
   </section>
 
+  <!-- PANTALLA: BANDEJA DE MENSAJES -->
+  <section class="screen hidden" id="screen-messages">
+    <h2 class="screen-title">💬 Mensajes</h2>
+    <div id="conversationsList" class="item-list"></div>
+  </section>
+
+  <!-- PANTALLA: CONVERSACIÓN -->
+  <section class="screen hidden" id="screen-conversation">
+    <div id="conversationHeader" class="conversation-header"></div>
+    <div class="chat-messages" id="conversationMessages"></div>
+    <div class="chat-input-row">
+      <button class="attach-btn" onclick="document.getElementById('conversationPhotoInput').click()">📷</button>
+      <input type="file" id="conversationPhotoInput" accept="image/*" style="display:none;" onchange="onConversationPhotoChosen()">
+      <input type="text" id="conversationInput" placeholder="Escribe un mensaje...">
+      <button onclick="sendConversationMessage()">Enviar</button>
+    </div>
+    <div id="conversationPhotoPreview" class="photo-preview hidden"></div>
+  </section>
+
   <!-- PANTALLA: NOTIFICACIONES -->
   <section class="screen hidden" id="screen-notifications">
     <h2 class="screen-title">🔔 Notificaciones</h2>
@@ -158,6 +181,6 @@
 
 </main>
 
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

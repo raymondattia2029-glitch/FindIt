@@ -1,4 +1,6 @@
 // FindIt — frontend (vanilla JS, sin frameworks)
+// MARCA DE VERSIÓN PARA DIAGNÓSTICO: VERSION_CHAT_UNIFICADO_v1
+console.log('FindIt app.js cargado: VERSION_CHAT_UNIFICADO_v1');
 
 let AUTH_TOKEN = localStorage.getItem('findit_token') || null;
 let CURRENT_USER = JSON.parse(localStorage.getItem('findit_user') || 'null');
@@ -111,6 +113,7 @@ function showScreen(name, pushHistory = true) {
 
   if (name === 'search') loadSearchResults();
   if (name === 'notifications') loadNotifications();
+  if (name === 'messages') loadConversationsList();
   window.scrollTo(0, 0);
 }
 
@@ -145,6 +148,13 @@ function itemThumb(item) {
   return item.foto
     ? `<img class="item-thumb" src="${item.foto}" alt="">`
     : `<div class="item-thumb">${item.type === 'lost' ? '🔴' : '🟢'}</div>`;
+}
+
+function expiryNote(createdAt) {
+  const diasRestantes = 30 - Math.floor((Date.now() - createdAt) / 86400000);
+  if (diasRestantes <= 0) return 'Este objeto ya pasó los 30 días y se ocultará del buscador pronto.';
+  if (diasRestantes <= 5) return `⏳ Se ocultará solo del buscador en ${diasRestantes} día${diasRestantes === 1 ? '' : 's'} si no lo marcas como resuelto.`;
+  return `Se oculta automáticamente del buscador a los 30 días (${diasRestantes} días restantes).`;
 }
 
 // ---------- Publicar objeto perdido / encontrado ----------
@@ -198,6 +208,7 @@ function showConfirmation(type, item, matches) {
           </div>
         `).join('')}
         <button class="ghost-btn" onclick="openItem('${matches[0].id}')">Ver coincidencia</button>
+        ${CURRENT_USER && matches[0].userId !== CURRENT_USER.id ? `<button class="ghost-btn" style="background:var(--brand); color:#fff; border-color:var(--brand);" onclick="openConversation('${matches[0].userId}', '${escapeHtml(matches[0].reporterName)}', '${matches[0].id}')">💬 Contactar</button>` : ''}
       </div>
     `;
   } else {
@@ -255,7 +266,6 @@ async function openItem(id) {
 
   renderDetail(data.item, data.matches);
   showScreen('detail');
-  loadMessages(id);
 }
 
 function renderDetail(item, matches) {
@@ -276,7 +286,10 @@ function renderDetail(item, matches) {
             </div>
             <span class="match-score">${Math.round(m.score * 100)}%</span>
           </div>
-          <button class="ghost-btn" style="margin-bottom:10px" onclick="openItem('${m.id}')">Ver coincidencia</button>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+            <button class="ghost-btn" style="margin-bottom:0; flex:1;" onclick="openItem('${m.id}')">Ver coincidencia</button>
+            ${CURRENT_USER && m.userId !== CURRENT_USER.id ? `<button class="ghost-btn" style="margin-bottom:0; flex:1; background:var(--brand); color:#fff; border-color:var(--brand);" onclick="openConversation('${m.userId}', '${escapeHtml(m.reporterName)}', '${m.id}')">💬 Contactar</button>` : ''}
+          </div>
         `).join('')}
       </div>
     `
@@ -300,23 +313,12 @@ function renderDetail(item, matches) {
       <button class="resolve-btn" onclick="markResolved('${item.id}', '${item.type}')">
         ✅ ${item.type === 'lost' ? 'Ya lo recuperé' : 'Ya se lo llevaron'}
       </button>
+      <p class="expiry-note">${expiryNote(item.createdAt)}</p>
     ` : ''}
 
     ${!isMine ? `
-      <button class="contact-btn" onclick="openChat('${item.id}')">💬 Contactar</button>
-      <div class="chat-box hidden" id="chatBox">
-        <div class="chat-messages" id="chatMessages"></div>
-        <div class="chat-input-row">
-          <input type="text" id="chatInput" placeholder="Escribe un mensaje...">
-          <button onclick="sendMessage('${item.id}')">Enviar</button>
-        </div>
-      </div>
-    ` : `
-      <div class="chat-box" id="chatBox">
-        <div class="detail-row" style="margin-bottom:10px;"><b>💬 Mensajes de contacto</b></div>
-        <div class="chat-messages" id="chatMessages"></div>
-      </div>
-    `}
+      <button class="contact-btn" onclick="openConversation('${item.userId}', '${escapeHtml(item.reporterName)}', '${item.id}')">💬 Contactar a ${escapeHtml(item.reporterName)}</button>
+    ` : ''}
   `;
 }
 
@@ -333,51 +335,104 @@ async function markResolved(id, type) {
   goHome();
 }
 
-function openChat() {
-  document.getElementById('chatBox').classList.remove('hidden');
-  document.getElementById('chatInput').focus();
-}
+// ---------- Mensajes (bandeja + conversación entre dos personas) ----------
+let currentConversationOtherId = null;
+let currentConversationItemId = null;
+let pendingPhotoFile = null;
 
-async function loadMessages(itemId) {
-  const res = await fetch(`/api/items/${itemId}/messages`);
-  const msgs = await res.json();
-  const box = document.getElementById('chatMessages');
-  if (!box) return;
+async function loadConversationsList() {
+  const res = await fetch('/api/conversations', { headers: authHeaders() });
+  const list = await res.json();
+  const container = document.getElementById('conversationsList');
 
-  if (msgs.length === 0) {
-    box.innerHTML = '<div class="empty-note">Todavía no hay mensajes.</div>';
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-note">Todavía no tienes conversaciones. Cuando contactes a alguien (o alguien te contacte) sobre un objeto, aparecerá aquí.</div>';
     return;
   }
+
+  container.innerHTML = list.map((c) => `
+    <button class="item-card" onclick="openConversation('${c.otherUserId}', '${escapeHtml(c.otherUserName)}')">
+      <div class="item-thumb">${c.otherUserName.charAt(0).toUpperCase()}</div>
+      <div class="item-info">
+        <div class="item-name">${escapeHtml(c.otherUserName)} ${c.unreadCount > 0 ? `<span class="bell-badge" style="position:static; display:inline-flex;">${c.unreadCount}</span>` : ''}</div>
+        <div class="item-meta">${c.itemNombre ? 'Sobre: ' + escapeHtml(c.itemNombre) + ' · ' : ''}${escapeHtml(c.lastMessage || '')}</div>
+      </div>
+    </button>
+  `).join('');
+}
+
+async function openConversation(otherUserId, otherUserName, itemId) {
+  currentConversationOtherId = otherUserId;
+  currentConversationItemId = itemId || null;
+  pendingPhotoFile = null;
+  document.getElementById('conversationHeader').innerHTML = `<h2 class="screen-title" style="margin-bottom:2px;">${escapeHtml(otherUserName)}</h2>`;
+  document.getElementById('conversationPhotoPreview').classList.add('hidden');
+  showScreen('conversation');
+  await loadConversationMessages();
+  refreshNotifications();
+}
+
+async function loadConversationMessages() {
+  const res = await fetch(`/api/conversations/${currentConversationOtherId}/messages`, { headers: authHeaders() });
+  const msgs = await res.json();
+  const box = document.getElementById('conversationMessages');
+
+  if (msgs.length === 0) {
+    box.innerHTML = '<div class="empty-note">Escribe el primer mensaje para empezar la conversación.</div>';
+    return;
+  }
+
   box.innerHTML = msgs.map((m) => {
-    const mine = CURRENT_USER && m.userId === CURRENT_USER.id;
+    const mine = CURRENT_USER && m.senderId === CURRENT_USER.id;
     return `
       <div class="chat-bubble ${mine ? 'mine' : 'theirs'}">
-        ${!mine ? `<div class="chat-sender">${escapeHtml(m.senderName)}</div>` : ''}
-        ${escapeHtml(m.text)}
+        ${m.photo ? `<img src="${m.photo}" class="chat-photo" alt="foto adjunta">` : ''}
+        ${m.text ? escapeHtml(m.text) : ''}
       </div>
     `;
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
 
-async function sendMessage(itemId) {
-  const input = document.getElementById('chatInput');
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
+function onConversationPhotoChosen() {
+  const input = document.getElementById('conversationPhotoInput');
+  if (!input.files || !input.files[0]) return;
+  pendingPhotoFile = input.files[0];
+  const preview = document.getElementById('conversationPhotoPreview');
+  preview.classList.remove('hidden');
+  preview.innerHTML = `📷 ${escapeHtml(pendingPhotoFile.name)} <button onclick="cancelPendingPhoto()">✕</button>`;
+}
 
-  await fetch(`/api/items/${itemId}/messages`, {
+function cancelPendingPhoto() {
+  pendingPhotoFile = null;
+  document.getElementById('conversationPhotoInput').value = '';
+  document.getElementById('conversationPhotoPreview').classList.add('hidden');
+}
+
+async function sendConversationMessage() {
+  const input = document.getElementById('conversationInput');
+  const text = input.value.trim();
+  if (!text && !pendingPhotoFile) return;
+
+  const formData = new FormData();
+  if (text) formData.set('text', text);
+  if (currentConversationItemId) formData.set('itemId', currentConversationItemId);
+  if (pendingPhotoFile) formData.set('foto', pendingPhotoFile);
+
+  input.value = '';
+  cancelPendingPhoto();
+
+  await fetch(`/api/conversations/${currentConversationOtherId}/messages`, {
     method: 'POST',
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ text }),
+    headers: authHeaders(),
+    body: formData,
   });
-  loadMessages(itemId);
+  loadConversationMessages();
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'chatInput') {
-    const sendBtn = document.querySelector('.chat-input-row button');
-    if (sendBtn) sendBtn.click();
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'conversationInput') {
+    sendConversationMessage();
   }
 });
 
